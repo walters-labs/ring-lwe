@@ -7,7 +7,7 @@ fn benchmark_polymul_small(c: &mut Criterion) {
     let p: i64 = 17; // Prime modulus
     let n: usize = 8;  // Length of the NTT (must be a power of 2)
     let omega = omega(p, n); // n-th root of unity
-    let params = Parameters::default();
+    let f = Polynomial::new(vec![1, 0, 0, 0, 1]);
 
     // Input polynomials (padded to length `n`)
     let poly_0 = Polynomial::new(vec![1, 2, 3, 4]);
@@ -15,12 +15,12 @@ fn benchmark_polymul_small(c: &mut Criterion) {
 
     // Time standard multiplication
     c.bench_function("Standard polymul (small)", |b| {
-        b.iter(|| polymul(&poly_0, &poly_1, p, &params.f))
+        b.iter(|| polymul(&poly_0, &poly_1, p, &f))
     });
 
     // Time fast multiplication
     c.bench_function("Fast polymul (small)", |b| {
-        b.iter(|| polymul_fast(&poly_0, &poly_1, p, &params.f, omega))
+        b.iter(|| polymul_fast(&poly_0, &poly_1, p, &f, omega))
     });
 }
 
