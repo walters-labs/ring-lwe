@@ -1,3 +1,13 @@
+#[path = "ntt_padding.rs"]
+mod ntt_padding;
+
+#[path = "ntt_adapter.rs"]
+mod ntt_adapter;
+
+#[path = "ntt_roots.rs"]
+mod ntt_roots;
+pub(crate) use ntt_roots::root_for_parameters;
+
 use polynomial_ring::Polynomial;
 use rand_distr::{Uniform, Normal, Distribution};
 use ntt::polymul_ntt;
@@ -24,7 +34,7 @@ impl Default for Parameters {
         let n = 1024;
         let q = 12289;
         let t = 2;
-        let omega = ntt::omega(q, 2*n);
+        let omega = root_for_parameters(q, 2*n);
         let mut poly_vec = vec![0i64;n+1];
         poly_vec[0] = 1;
         poly_vec[n] = 1;
@@ -106,7 +116,9 @@ pub fn polymul(x : &Polynomial<i64>, y : &Polynomial<i64>, q : i64, f : &Polynom
 /// * `y` - polynomial to be multiplied.
 /// * `q` - coefficient modulus.
 ///	* `f` - polynomial modulus.
-/// * `omega` - n-th root of unity
+/// * `omega` - root of order twice the degree of `f`
+///
+/// Requires `f = x^d + 1` with power-of-two `d`, and inputs of degree below `d`.
 /// # Returns:
 ///	polynomial in Z_q[X]/(f)
 /// # Example:
@@ -114,11 +126,11 @@ pub fn polymul(x : &Polynomial<i64>, y : &Polynomial<i64>, q : i64, f : &Polynom
 /// let p: i64 = 17; // Prime modulus
 /// let n: usize = 8;  // Length of the NTT (must be a power of 2)
 /// let omega = ntt::omega(p, n); // n-th root of unity
-/// let params = ring_lwe::utils::Parameters::default();
+/// let f = polynomial_ring::Polynomial::new(vec![1, 0, 0, 0, 1]);
 /// let a = polynomial_ring::Polynomial::new(vec![1, 2, 3, 4]);
 /// let b = polynomial_ring::Polynomial::new(vec![5, 6, 7, 8]);
-/// let c_std = ring_lwe::utils::polymul(&a, &b, p, &params.f);
-/// let c_fast = ring_lwe::utils::polymul_fast(&a, &b, p, &params.f, omega);
+/// let c_std = ring_lwe::utils::polymul(&a, &b, p, &f);
+/// let c_fast = ring_lwe::utils::polymul_fast(&a, &b, p, &f, omega);
 /// assert_eq!(c_std, c_fast, "test failed: {} != {}", c_std, c_fast);
 /// ```
 pub fn polymul_fast(
@@ -128,29 +140,25 @@ pub fn polymul_fast(
     f: &Polynomial<i64>, 
     omega: i64
 ) -> Polynomial<i64> {
-    let n1 = x.coeffs().len();
-    let n2 = y.coeffs().len();
-    // Compute the nearest power of 2 at least twice the max of input degrees+1
-    let n = 2*(std::cmp::max(n1, n2)).next_power_of_two();
+    let degree = f.coeffs().len().checked_sub(1)
+        .expect("polynomial modulus must be x^d + 1");
+    assert!(degree.is_power_of_two(), "ring degree must be a positive power of two");
+    assert!(f.coeffs()[0] == 1 && f.coeffs()[degree] == 1
+        && f.coeffs()[1..degree].iter().all(|&coefficient| coefficient == 0),
+        "polynomial modulus must be x^d + 1");
+    assert!(x.coeffs().len() <= degree && y.coeffs().len() <= degree,
+        "inputs must have degree less than the ring degree");
+    // Use the ring's fixed length even for zero or trimmed polynomials.
+    let n = degree.checked_mul(2).expect("transform length overflow");
     // Pad coefficients
-    let x_pad = {
-        let mut coeffs = x.coeffs().to_vec();
-        coeffs.resize(n, 0);
-        coeffs
-    };
-    let y_pad = {
-        let mut coeffs = y.coeffs().to_vec();
-        coeffs.resize(n, 0);
-        coeffs
-    };
+    let x_pad = ntt_padding::padded(x, n);
+    let y_pad = ntt_padding::padded(y, n);
 
     // Perform the polynomial multiplication
-    let r_coeffs = polymul_ntt(&x_pad, &y_pad, n, q, omega);
-
-    // Construct the result polynomial and reduce modulo f
-    let mut r = Polynomial::new(r_coeffs);
-    r = polyrem(r,f);
-    mod_coeffs(r, q)
+    let mut r_coeffs = polymul_ntt(&x_pad, &y_pad, n, q, omega);
+    ntt_adapter::fold_center(&mut r_coeffs, q);
+    r_coeffs.truncate(degree);
+    Polynomial::new(r_coeffs)
 }
 
 

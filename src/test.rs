@@ -57,7 +57,7 @@ mod tests {
         let mut params = Parameters::default();
         let (q, t, f) = (params.q, params.t, &params.f);
         params.q = q*q;
-        params.omega = omega(params.q, 2*params.n);
+        params.omega = crate::utils::root_for_parameters(params.q, 2*params.n);
 
         //create polynomials from ints
         let m0_poly = Polynomial::new(vec![1, 0, 1]);
@@ -94,14 +94,14 @@ mod tests {
         let p: i64 = 17; // Prime modulus
         let n: usize = 8;  // Length of the NTT (must be a power of 2)
         let omega = omega(p, n); // n-th root of unity
-        let params = Parameters::default();
+        let f = Polynomial::new(vec![1, 0, 0, 0, 1]);
     
         // Input polynomials (padded to length `n`)
         let a = Polynomial::new(vec![1, 2, 3, 4]);
         let b = Polynomial::new(vec![5, 6, 7, 8]);
     
-        let c_std = polymul(&a, &b, p, &params.f);
-        let c_fast = polymul_fast(&a, &b, p, &params.f, omega);
+        let c_std = polymul(&a, &b, p, &f);
+        let c_fast = polymul_fast(&a, &b, p, &f, omega);
 
         assert_eq!(c_std, c_fast, "test failed: {} != {}", c_std, c_fast);
     }
